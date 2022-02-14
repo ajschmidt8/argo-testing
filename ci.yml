@@ -1,0 +1,98 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: ci-example-
+spec:
+  entrypoint: pr-workflow
+  arguments:
+    parameters:
+      - name: test_configs
+        value: |
+          [
+            { "Label": "driver-450", "Cuda_ver": "11.0", "Py_ver": "3.8", "Os": "centos7" },
+            { "Label": "driver-495", "Cuda_ver": "11.2", "Py_ver": "3.9", "Os": "ubuntu18.04" },
+            { "Label": "driver-495", "Cuda_ver": "11.5", "Py_ver": "3.9", "Os": "ubuntu20.04" }
+          ]
+  templates:
+    - name: pr-workflow
+      dag:
+        tasks:
+          - name: cpp-build
+            template: cpp-build
+          - name: cpp-tests
+            template: cpp-tests
+            # arguments:
+            #   parameters:
+            #     - name: Label
+            #       value: "{{ item.Label }}"
+            #     - name: Cuda_ver
+            #       value: "{{ item.Cuda_ver }}"
+            #     - name: Os
+            #       value: "{{ item.Os }}"
+            dependencies: [cpp-build]
+            # withParam: "{{= toJson(map(fromJson(workflow.parameters.test_configs), {toJson({Label: .Label, Cuda_ver: .Cuda_ver, Os: .Os})})) }}"
+          - name: python-build
+            template: python-build
+            arguments:
+              parameters:
+                - name: Py_ver
+                  value: "{{ item }}"
+            withParam: "{{= toJson(sprig.uniq(jsonpath(workflow.parameters.test_configs, '$.[:].Py_ver'))) }}"
+            dependencies: [cpp-build]
+          - name: python-tests
+            template: python-tests
+            arguments:
+              parameters:
+                - name: Label
+                  value: "{{ item.Label }}"
+                - name: Cuda_ver
+                  value: "{{ item.Cuda_ver }}"
+                - name: Py_ver
+                  value: "{{ item.Py_ver }}"
+                - name: Os
+                  value: "{{ item.Os }}"
+            withParam: "{{ workflow.parameters.test_configs }}"
+            dependencies: [python-build]
+    - name: cpp-build
+      container:
+        image: alpine:3.15
+        command: ["echo"]
+        args: ["C++ Build"]
+    - name: cpp-tests
+      inputs:
+        parameters:
+          - name: Label
+            value: 123
+          - name: Cuda_ver
+            value: 123
+          - name: Os
+            value: 123
+      container:
+        image: alpine:3.15
+        command: ["echo"]
+        args:
+          [
+            "C++ Tests - {{ inputs.parameters.Label }} - {{ inputs.parameters.Cuda_ver }} - 3.9 - {{ inputs.parameters.Os }}",
+          ]
+    - name: python-build
+      inputs:
+        parameters:
+          - name: Py_ver
+      container:
+        image: alpine:3.15
+        command: ["echo"]
+        args: ["Python Build - {{ inputs.parameters.Py_ver }}"]
+    - name: python-tests
+      inputs:
+        parameters:
+          - name: Label
+          - name: Cuda_ver
+          - name: Py_ver
+          - name: Os
+      container:
+        image: alpine:3.15
+        command: ["echo"]
+        args:
+          [
+            "Python Tests - {{ inputs.parameters.Label }} - {{ inputs.parameters.Cuda_ver }} - {{ inputs.parameters.Py_ver }} - {{ inputs.parameters.Os }}",
+          ]
